@@ -12,10 +12,11 @@ RUN apt-get update \
 
 # Setup our environment & deps
 ADD ./mnt-run.sh ${HOME}/mnt-run.sh
+RUN chmod +x ${HOME}/mnt-run.sh
 ENV INSTALL_PATH=/root
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install --no-install-recommends --no-install-suggests -y curl apt-utils;\
-apt-get install -y git s3fs build-essential;\
+apt-get install -y git build-essential;\
 \
 # Install tor-v3-address (CUDA .onion generator) \
 git clone https://github.com/dr-bonez/tor-v3-vanity ${INSTALL_PATH}/tor-v3-vanity;\
@@ -38,4 +39,4 @@ cargo install ptx-linker;\
 cargo +nightly install --path .
 
 # Set script that will execute when end-user runs container
-ENTRYPOINT ["~/mnt-space-run.sh"]
+ENTRYPOINT ["/root/mnt-run.sh"]
