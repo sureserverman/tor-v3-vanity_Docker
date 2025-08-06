@@ -11,8 +11,8 @@ RUN apt-get update \
  && apt-get install -yq cuda-libraries-dev-10-0
 
 # Setup our environment & deps
-ADD ./mnt-run.sh ${HOME}/mnt-run.sh
-RUN chmod +x ${HOME}/mnt-run.sh
+ADD mnt-run.sh /root/mnt-run.sh
+RUN chmod +x /root/mnt-run.sh
 ENV INSTALL_PATH=/root
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install --no-install-recommends --no-install-suggests -y curl apt-utils;\
