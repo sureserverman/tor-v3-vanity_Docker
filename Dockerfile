@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install --no-install-recommends --no-install-sugge
  && apt-get install -y git build-essential
 
 # Install rust and NVPTX toolchain
-ARG RUST_VERSION=nightly-2020-01-02
-ARG PTX_LINKER_VERSION=0.9.0
+ARG RUST_VERSION=nightly
+ARG PTX_LINKER_VERSION=0.9.1
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION}
 ENV PATH /root/.cargo/bin:$PATH
 RUN rustup target add nvptx64-nvidia-cuda --toolchain ${RUST_VERSION}
