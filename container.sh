@@ -31,4 +31,4 @@ if ! $ENGINE image inspect "$IMAGENAME" >/dev/null 2>&1; then
 fi
 
 # Execute the chosen engine with all passed arguments.
-exec "$ENGINE" "$@"
+exec "$ENGINE"
