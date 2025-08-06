@@ -10,33 +10,26 @@ RUN apt-get update \
  && apt-get update \
  && apt-get install -yq cuda-libraries-dev-10-0
 
-# Setup our environment & deps
+# Setup environment & deps
 ADD mnt-run.sh /root/mnt-run.sh
 RUN chmod +x /root/mnt-run.sh
 ENV INSTALL_PATH=/root
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install --no-install-recommends --no-install-suggests -y curl apt-utils;\
-apt-get install -y git build-essential;\
-\
-# Install tor-v3-address (CUDA .onion generator) \
-git clone https://github.com/dr-bonez/tor-v3-vanity ${INSTALL_PATH}/tor-v3-vanity;\
-mkdir  ${INSTALL_PATH}/tor-v3-vanity/mykeys;\
-\
-# Install rust \
-echo "Change is coming...";\
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;\
-. $HOME/.cargo/env;
-ENV PATH /root/.cargo/bin:$PATH
-RUN cargo install ptx-linker
-RUN rustup toolchain add nightly-2020-01-02 \
-&& rustup target add nvptx64-nvidia-cuda --toolchain nightly-2020-01-02;\
-# curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly -y;\
-cd ${INSTALL_PATH}/tor-v3-vanity;\
-# export PATH="$HOME/.cargo/bin:$PATH";\
-rustup install nightly;\
-rustup target add nvptx64-nvidia-cuda;\
-cargo install ptx-linker;\
-cargo +nightly install --path .
+RUN apt-get update && apt-get install --no-install-recommends --no-install-suggests -y curl apt-utils \
+ && apt-get install -y git build-essential
 
-# Set script that will execute when end-user runs container
+# Install rust and NVPTX toolchain
+ARG RUST_VERSION=nightly-2020-01-02
+ARG PTX_LINKER_VERSION=0.9.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION}
+ENV PATH /root/.cargo/bin:$PATH
+RUN rustup target add nvptx64-nvidia-cuda --toolchain ${RUST_VERSION}
+
+# Install tor-v3-address (CUDA .onion generator)
+RUN git clone https://github.com/dr-bonez/tor-v3-vanity ${INSTALL_PATH}/tor-v3-vanity \
+ && mkdir ${INSTALL_PATH}/tor-v3-vanity/mykeys \
+ && cd ${INSTALL_PATH}/tor-v3-vanity \
+ && cargo +${RUST_VERSION} install ptx-linker --version ${PTX_LINKER_VERSION} \
+ && cargo +${RUST_VERSION} install --path .
+
 ENTRYPOINT ["/root/mnt-run.sh"]
