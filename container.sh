@@ -1,55 +1,78 @@
 #!/bin/bash
-# Wrapper script to use either podman or docker as container engine.
-set -e
+# Run the tor-v3-vanity image under podman or docker.
+#
+#   ./container.sh build              build (or rebuild) the image
+#   ./container.sh PREFIX [OPTIONS]   run t3v, forwarding every argument
+#
+# Everything after the script name goes to t3v inside the container, so all of
+# its flags work here: --bonus, --count, --algo, --help, and so on.
+set -euo pipefail
 
-# If CONTAINER_ENGINE is set, use it. Otherwise, prefer podman if available.
-ENGINE="${CONTAINER_ENGINE}"
-if [ -z "$ENGINE" ]; then
-  if command -v podman >/dev/null 2>&1; then
-    ENGINE="podman"
-  elif command -v docker >/dev/null 2>&1; then
-    ENGINE="sudo docker"
-  else
-    echo "Neither podman nor docker is available in PATH."
-    echo "Do you want to install podman or docker?"
-    echo "D is for docker, P is for podman, or any other key to exit."
-    read -r -n 1 -p "Choose an option: " choice
-    echo
-    case "$choice" in
-        [Dd]* ) echo "Installing docker..."; sudo apt-get install -y docker; ENGINE="sudo docker";;
-        [Pp]* ) echo "Installing podman..."; sudo apt-get install -y podman; ENGINE="podman";
-                # Ensure podman is set up to use the GPU if available.
-                if ! grep -q 'nvidia.com/gpu' /etc/containers/oci/hooks.d/oci-systemd-hook.json; then
-                  echo "Configuring podman for GPU access..."
-                  sudo mkdir -p /etc/containers/oci/hooks.d
-                  echo '{
-                    "version": "1.0.0",
-                    "hook": {
-                      "path": "/usr/bin/nvidia-container-runtime-hook",
-                      "args": [],
-                      "env": []
-                    }
-                  }' | sudo tee /etc/containers/oci/hooks.d/oci-systemd-hook.json >/dev/null
-                fi;;
-        * ) echo "Error: neither podman nor docker was found in PATH" >&2; exit 1;;
-    esac
-  fi
-fi
+IMAGE="${IMAGE:-tor-v3-vanity}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KEYS_DIR="${KEYS_DIR:-$PWD/keys}"
 
-#Check if  the image is already built
-IMAGENAME="tor-v3-vanity"
-if ! $ENGINE image inspect "$IMAGENAME" >/dev/null 2>&1; then
-  echo "Image $IMAGENAME not found. Building the image..."
-  $ENGINE build -t "$IMAGENAME" .
-fi
-
-if [ "$ENGINE" == "podman" ]; then
-  # Podman requires the --hooks-dir option to be set for GPU access.
-  runargs="--hooks-dir=/usr/share/containers/oci/hooks.d --device nvidia.com/gpu=all -e ONION_PREFIX=$1 -v \"$(pwd)/keys:/root/tor-v3-vanity/mykeys\" tor-v3-vanity"
+# Engine selection. Held as an array so a multi-word value such as
+# "sudo docker" stays several argv entries instead of collapsing into one
+# command name that no shell can find.
+if [ -n "${CONTAINER_ENGINE:-}" ]; then
+    read -r -a ENGINE <<< "$CONTAINER_ENGINE"
+elif command -v podman >/dev/null 2>&1; then
+    ENGINE=(podman)
+elif command -v docker >/dev/null 2>&1; then
+    # Rootless docker needs no sudo; only reach for it if the daemon is out of
+    # reach as the current user.
+    if docker info >/dev/null 2>&1; then
+        ENGINE=(docker)
+    else
+        ENGINE=(sudo docker)
+    fi
 else
-  # Docker does not require the --hooks-dir option.
-  runargs="--rm --gpus all -e ONION_PREFIX=$1 -v \"$(pwd)/keys:/root/tor-v3-vanity/mykeys\" tor-v3-vanity"
+    cat >&2 <<'EOF'
+Neither podman nor docker was found in PATH.
+
+Install one of them, for example:
+  sudo apt-get install -y podman        # or
+  sudo apt-get install -y docker.io
+
+You will also need the NVIDIA container toolkit for GPU access:
+  https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+
+Then re-run this script, or set CONTAINER_ENGINE to the engine of your choice.
+EOF
+    exit 1
 fi
 
-# Execute the chosen engine with all passed arguments.
-exec "$ENGINE" "run" "$runargs"
+build_image() {
+    echo "Building $IMAGE with ${ENGINE[*]}..."
+    "${ENGINE[@]}" build -t "$IMAGE" "$HERE"
+}
+
+if [ "${1:-}" = "build" ]; then
+    build_image
+    exit 0
+fi
+
+if ! "${ENGINE[@]}" image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "Image $IMAGE not found."
+    build_image
+fi
+
+mkdir -p "$KEYS_DIR"
+
+run_args=(--rm -v "$KEYS_DIR:/keys")
+if [ "${ENGINE[0]}" = "podman" ]; then
+    # CDI device name, supported by podman 4.1+ with the NVIDIA container
+    # toolkit configured. Older podman instead wants:
+    #   --hooks-dir=/usr/share/containers/oci/hooks.d
+    run_args+=(--device nvidia.com/gpu=all)
+else
+    run_args+=(--gpus all)
+fi
+
+# Interactive terminal gets the live dashboard; a pipe gets plain status lines.
+if [ -t 1 ]; then
+    run_args+=(-t)
+fi
+
+exec "${ENGINE[@]}" run "${run_args[@]}" "$IMAGE" "$@"
